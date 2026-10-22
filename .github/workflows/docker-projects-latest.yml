@@ -39,13 +39,39 @@ jobs:
         with:
           rootless: ${{ matrix.rootless-docker }}
           version: type=image,tag=master
+          # Testcontainers ignores the Docker CLI context the action switches to:
+          # without DOCKER_HOST it uses the runner's stock /var/run/docker.sock.
+          set-host: true
+          # Rootless: without a systemd user session, the default systemd cgroup driver
+          # fails every container start ("Interactive authentication required"); with
+          # cgroupfs, rootless Docker runs containers without cgroups instead.
           daemon-config: |
             {
+              ${{ matrix.rootless-docker && '"exec-opts": ["native.cgroupdriver=cgroupfs"],' || '' }}
               "debug": true,
               "features": {
                 "containerd-snapshotter": ${{ matrix.containerd-integration }}
               }
             }
+
+      # The setup step's `docker info` follows the Docker CLI context, so it shows the
+      # nightly daemon even when the tests use the runner's one: check DOCKER_HOST.
+      - name: Verify the tests use the nightly Docker daemon
+        run: |
+          if [ -z "${DOCKER_HOST:-}" ]; then
+            echo "::error::DOCKER_HOST is not set: the tests would use the runner's Docker, not the nightly one"
+            exit 1
+          fi
+          if [ "${{ matrix.rootless-docker }}" = "true" ] && ! docker info --format '{{json .SecurityOptions}}' | grep -q 'name=rootless'; then
+            echo "::error::The Docker daemon at ${DOCKER_HOST} is not running in rootless mode"
+            exit 1
+          fi
+          # gotestsum shows the Testcontainers banner only for failing tests: print it here.
+          go test -v -count=1 -run '^TestGetDockerInfo$/^works$' . 2>&1 | tee "${RUNNER_TEMP}/banner.log"
+          if ! grep -qF "Resolved Docker Host: ${DOCKER_HOST}" "${RUNNER_TEMP}/banner.log"; then
+            echo "::error::Testcontainers does not resolve ${DOCKER_HOST} as its Docker host"
+            exit 1
+          fi
 
       - name: go test
         timeout-minutes: 30
