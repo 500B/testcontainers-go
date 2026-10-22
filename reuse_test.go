@@ -39,6 +39,19 @@ func TestGenericContainer_stop_start_withReuse(t *testing.T) {
 func TestGenericContainer_pause_start_withReuse(t *testing.T) {
 	containerName := "my-nginx"
 
+	// Pause the container is not supported by our API, but we can do it manually
+	// by using the Docker client.
+	cli, err := core.NewClient(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cli.Close()) })
+
+	info, err := cli.Info(context.Background(), client.InfoOptions{})
+	require.NoError(t, err)
+	if info.Info.CgroupDriver == "none" {
+		// e.g. rootless Docker without systemd, which creates containers without cgroups.
+		t.Skip("pausing a container requires a cgroup driver")
+	}
+
 	opts := []testcontainers.ContainerCustomizer{
 		testcontainers.WithExposedPorts("8080/tcp"),
 		testcontainers.WithReuseByName(containerName),
@@ -48,12 +61,6 @@ func TestGenericContainer_pause_start_withReuse(t *testing.T) {
 	testcontainers.CleanupContainer(t, ctr)
 	require.NoError(t, err)
 	require.NotNil(t, ctr)
-
-	// Pause the container is not supported by our API, but we can do it manually
-	// by using the Docker client.
-	cli, err := core.NewClient(context.Background())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, cli.Close()) })
 
 	_, err = cli.ContainerPause(context.Background(), ctr.GetContainerID(), client.ContainerPauseOptions{})
 	require.NoError(t, err)

@@ -61,6 +61,24 @@ jobs:
         uses: docker/setup-docker-action@2bf61fb9464cc67f0cbdeabed6aa0380accd1c70 # v5.5.0
         with:
           rootless: true
+          # Testcontainers ignores the Docker CLI context the action switches to:
+          # without DOCKER_HOST it uses the runner's rootful /var/run/docker.sock.
+          set-host: true
+
+      # A bare `docker info` passes through the action's CLI context even when the
+      # tests would use the rootful daemon, so require DOCKER_HOST as well.
+      - name: Verify the tests use rootless Docker
+        if: ${{ inputs.rootless-docker }}
+        run: |
+          if [ -z "${DOCKER_HOST:-}" ]; then
+            echo "::error::DOCKER_HOST is not set: the tests would not run against rootless Docker"
+            exit 1
+          fi
+          if ! docker info --format '{{json .SecurityOptions}}' | grep -q 'name=rootless'; then
+            echo "::error::The Docker daemon at ${DOCKER_HOST} is not running in rootless mode"
+            exit 1
+          fi
+          echo "Testcontainers will use rootless Docker at ${DOCKER_HOST}"
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
