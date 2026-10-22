@@ -64,6 +64,13 @@ jobs:
           # Testcontainers ignores the Docker CLI context the action switches to:
           # without DOCKER_HOST it uses the runner's rootful /var/run/docker.sock.
           set-host: true
+          # Without a systemd user session, the default systemd cgroup driver fails
+          # every container start ("Interactive authentication required"); with
+          # cgroupfs, rootless Docker runs containers without cgroups instead.
+          daemon-config: |
+            {
+              "exec-opts": ["native.cgroupdriver=cgroupfs"]
+            }
 
       # A bare `docker info` passes through the action's CLI context even when the
       # tests would use the rootful daemon, so require DOCKER_HOST as well.
